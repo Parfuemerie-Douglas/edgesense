@@ -34,25 +34,39 @@ Edgesense uses a number of AWS Services and resources:
 ## Deployment
 <a name="deployment"/>
 
-The following steps assume that the AWS CLI and the Serverless framework (https://serverless.com/) are installed and configured.
+Prerequisites:
+* NPM needs to be installed
+* AWS CLI needs to be installed and configured
+* Serverless framework (https://serverless.com/)
 
-1. Deploy resources on AWS 
+Steps to deploy
+1. Resolve NPM dependencies
+```npm install```
+2. To customize your S3 bucket names, create a file "config.dev.yml" in the root directory, and add the following lines, replacing "IDENTIFIER" with a unique string:
+```
+s3ingestbucketname: edgesense-ingest-dev-IDENTIFIER
+s3storebucketname: edgesense-store-dev-IDENTIFIER
+```
+3. Deploy resources on AWS 
 ```sls deploy```
-2. Invoke the Init function to write test configuration and start the Kinesis analytics application 
-```sls invoke --function Invoke```
+4. Invoke the Init function to write test configuration and start the Kinesis analytics application 
+```sls invoke --function Init```
+
+This creates a CloudFormation stack with all necessary resources in your AWS account. To un-deploy, simply delete the stack.
 
 ## Test Drive
 <a name="testdrive"/>
 
-1. Generate test data
-2. Observe the dashboard
-
-## Customizing
-
-Create Athena tables and partitions (see [Athena readme](athena/README.md))
-
-Go to Dynamodb, or use the import script:
-  node importdata.js REGION DYNAMODB_TABLENAME CSVFILENAME
+1. Generate random test data. This simulates delivery of log data from Akamai DataStream
+```node generate.js edgesense-ingest-dev-IDENTIFIER```
+Note: replace IDENTIFIER with the unique string chosen for the ingestion S3 bucket above.
+2. In CloudWatch, check the generated metrics in the "edgesense-dev" namespace that will start arriving after a couple of minutes
+3. Create Athena tables and partitions, and use SQL to run queries on the log data (see [Athena readme](athena/README.md))
+4. Customize the regular expressions used for URL pattern detection through DynamoDb, or use the import script:
+```
+cd Init
+node importdata.js REGION DYNAMODB_TABLENAME CSVFILENAME
+```
 
 ## Scalability limits
 
