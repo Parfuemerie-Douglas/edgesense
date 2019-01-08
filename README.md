@@ -29,7 +29,13 @@ Edgesense uses a number of AWS Services and resources:
 * AWS CloudFormation - deployment of the solution
 * AWS IAM - roles
 
-![Solution Architecture](.github/Architecture.png)
+![Solution Architecture](docs/Architecture.png)
+
+By default, edgesense calculates total counts per HTTP status code, and counts per HTTP status code and URL pattern. 
+
+![Total counts](docs/metrics.png)
+
+![Counts per URL pattern](docs/metrics2.png)
 
 ## Deployment
 <a name="deployment"/>
