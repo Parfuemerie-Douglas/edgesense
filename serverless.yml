@@ -1,0 +1,677 @@
+service: edgesense
+
+provider:
+  name: aws
+  runtime: nodejs6.10
+  stage: dev
+  region: eu-west-1
+  versionFunctions: false
+
+custom:
+  defaults:
+    s3ingestbucketname: "edgesense-ingest-${opt:stage, self:provider.stage}"
+    s3storebucketname: "edgesense-store-${opt:stage, self:provider.stage}"    
+  s3ingestbucketname: "${file(config.${self:provider.stage}.yml):s3ingestbucketname, self:custom.defaults.s3ingestbucketname}"
+  s3storebucketname: "${file(config.${self:provider.stage}.yml):s3storebucketname, self:custom.defaults.s3storebucketname}"
+  s3storebucketprefix: "http-logs/"
+  s3storebucketprefixaggregated: "http-logs-aggregated/"
+  firehosestreamrawname: "${self:service}-raw-${opt:stage, self:provider.stage}"  
+  firehosestreamaggregatedname: "${self:service}-aggregated-${opt:stage, self:provider.stage}"  
+  kinesis_analytics_application_name: "${self:service}-analytics-${opt:stage, self:provider.stage}"
+  dynamodb_tablename: "${self:service}-urlpatterns-${opt:stage, self:provider.stage}"
+   
+package:
+  excludeDevDependencies: false
+  exclude:
+    - node_modules/aws-sdk/**
+    - .gitignore
+    - .git/**
+    - .vscode/**
+
+functions:
+
+  S3Kinesis:
+    role: IngestRole
+    handler: Ingest/handler.read
+    timeout: 300
+    events:
+      - s3: ingest   # References S3BucketIngest below per the Serverless naming convention, https://github.com/serverless/serverless/blob/master/docs/providers/aws/events/s3.md#custom-bucket-configuration
+    environment:
+      FIREHOSE_STREAM: ${self:custom.firehosestreamrawname}
+      REGION: ${opt:region, self:provider.region}
+
+  Init:
+    role: InitRole
+    handler: Init/handler.process
+    environment:
+      KINESIS_ANALYTICS_NAME: ${self:custom.kinesis_analytics_application_name}
+      DYNAMODB_TABLE_NAME: ${self:custom.dynamodb_tablename}
+
+  CloudWatchPublish:
+    role: CloudWatchRole
+    handler: CloudWatchPublish/handler.CloudWatchPublish
+    timeout: 120
+
+  Preprocessor:
+    handler: Preprocessor/handler.process
+    role: PreprocessorRole
+    timeout: 60
+    environment:
+      REGION: ${opt:region, self:provider.region}
+      DYNAMODB_TABLE_NAME: ${self:custom.dynamodb_tablename}
+
+  GenerateTestData:
+    role: GenerateTestDataRole
+    handler: GenerateTestData/handler.process
+    environment:
+      REGION: ${opt:region, self:provider.region}
+      BUCKET: ${self:custom.s3ingestbucketname}
+
+resources:
+  Resources:
+    # S3 bucket for ingesting events
+    S3BucketIngest:
+      Type: AWS::S3::Bucket
+      DependsOn:
+        - S3BucketIngestPermissionLambda
+      Properties:
+        BucketName: ${self:custom.s3ingestbucketname}
+        NotificationConfiguration:
+          LambdaConfigurations: 
+            - 
+              Event: "s3:ObjectCreated:*"
+              Function: 
+                Fn::GetAtt: [S3KinesisLambdaFunction, Arn]
+              Filter: 
+                S3Key: 
+                  Rules: 
+                    - 
+                      Name: "prefix"
+                      Value: ""
+    S3BucketIngestPermissionLambda: 
+      Type: AWS::Lambda::Permission
+      Properties:
+        FunctionName: 
+          Fn::GetAtt: ["S3KinesisLambdaFunction", "Arn"]
+        Action: "lambda:InvokeFunction"
+        Principal: s3.amazonaws.com
+        SourceArn: 
+          Fn::Join: [ "", [ "arn:aws:s3:::${self:custom.s3ingestbucketname}" ] ]    
+    # S3 bucket for storing processed events
+    S3BucketStore:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.s3storebucketname}        
+    # Stream from S3 reader function to Kinesis Analytics, with raw S3 delivery
+    DeliveryStreamRaw:
+      Type: AWS::KinesisFirehose::DeliveryStream
+      Properties: 
+        DeliveryStreamName: ${self:custom.firehosestreamrawname}
+        DeliveryStreamType: DirectPut
+        S3DestinationConfiguration:
+          BucketARN:
+            Fn::GetAtt: [S3BucketStore, Arn]
+          BufferingHints: 
+            IntervalInSeconds: 300
+            SizeInMBs: 5
+          CompressionFormat: GZIP
+          EncryptionConfiguration:
+            NoEncryptionConfig: NoEncryption
+          Prefix: ${self:custom.s3storebucketprefix}
+          RoleARN: 
+            Fn::GetAtt: [DeliveryStreamRawRole, Arn]
+    # Role for firehose delivery stream
+    DeliveryStreamRawRole: 
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: "${self:service}-DeliveryStreamS3AnalyticsRole-${opt:stage, self:provider.stage}"
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Principal:
+                  Service:
+                    - firehose.amazonaws.com
+                Action:
+                  - sts:AssumeRole
+        Policies:
+          -
+            PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "glue:GetTableVersions"
+                  Resource: 
+                    - "*"                
+                - Effect: "Allow"
+                  Action:
+                    - "s3:ListBucketMultipartUploads"                    
+                    - "s3:ListBucket"                    
+                    - "s3:PutObject"
+                    - "s3:GetObject"
+                    - "s3:AbortMultipartUpload"
+                    - "s3:GetBucketLocation"
+                  Resource:
+                    - "arn:aws:s3:::${self:custom.s3storebucketname}"
+                    - "arn:aws:s3:::${self:custom.s3storebucketname}/*"                    
+                - Effect: "Allow"
+                  Action:
+                    - "kinesis:GetShardIterator"
+                    - "kinesis:DescribeStream"
+                    - "kinesis:GetRecords"
+                  Resource:
+                    #- Fn::GetAtt: [DeliveryStreamRaw, Arn]
+                    #- "arn:aws:kinesis:${opt:region, self:provider.region}:*:stream/${self:custom.firehosestreamrawname}"
+                    - "*"
+                - Effect: "Allow"
+                  Action:
+                    - "logs:PutLogEvents"
+                  Resource:
+                    - "*"
+                  #Resource:
+                    #"arn:aws:logs:eu-west-1:103195299527:log-group:/aws/kinesisfirehose/http-logs-firehose:log-stream:*"
+                - Effect: "Allow"
+                  Action:
+                    - "lambda:InvokeFunction"
+                    - "lambda:GetFunctionConfiguration"
+                  Resource:
+                    - "*"
+    # Role for S3 reader function   
+    IngestRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: "${self:service}-IngestRole-${opt:stage, self:provider.stage}"
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Principal:
+                  Service:
+                    - lambda.amazonaws.com
+                Action:
+                  - sts:AssumeRole
+        ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        Policies:
+          -
+            PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - firehose:PutRecordBatch
+                  Resource:
+                    - Fn::GetAtt: [DeliveryStreamRaw, Arn]
+                - Effect: "Allow"
+                  Action:
+                    - "s3:ListBucket"              
+                  Resource:                       
+                    - "arn:aws:s3:::${self:custom.s3ingestbucketname}"
+                - Effect: "Allow"
+                  Action:
+                    - "s3:GetObject"
+                  Resource: 
+                    "arn:aws:s3:::${self:custom.s3ingestbucketname}/*"
+    # Role for CloudWatch publishing function
+    CloudWatchRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: "${self:service}-CloudWatchRole-${opt:stage, self:provider.stage}"
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Principal:
+                  Service:
+                    - lambda.amazonaws.com
+                Action:
+                  - sts:AssumeRole
+        ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        Policies:
+          -
+            PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "cloudwatch:PutMetricData"
+                  Resource: "*"
+                - Effect: "Allow"
+                  Action:
+                    - "kinesis:GetRecords"
+                    - "kinesis:GetShardIterator"
+                    - "kinesis:DescribeStream"
+                    - "kinesis:ListStreams"
+                  Resource: 
+                    # Fn::GetAtt: [KinesisStreamAggregated, Arn]
+                    "arn:aws:kinesis:${opt:region, self:provider.region}:*:stream/http-logs-aggregated"   # FIXME 
+    # Role for test data generation function
+    GenerateTestDataRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: "${self:service}-GenerateTestDataRole-${opt:stage, self:provider.stage}"
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Principal:
+                  Service:
+                    - lambda.amazonaws.com
+                Action:
+                  - sts:AssumeRole
+        ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        Policies:
+          -
+            PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "s3:ListBucket"              
+                  Resource:                       
+                    - "arn:aws:s3:::${self:custom.s3ingestbucketname}"
+                - Effect: "Allow"
+                  Action:
+                    - "s3:GetObject"
+                    - "s3:PutObject"
+                  Resource: 
+                    "arn:aws:s3:::${self:custom.s3ingestbucketname}/*"                
+
+    # Stream from Kinesis Analytics app into S3, for aggregated data
+    DeliveryStreamAggregated:
+      Type: AWS::KinesisFirehose::DeliveryStream
+      Properties: 
+        DeliveryStreamName: ${self:custom.firehosestreamaggregatedname}
+        DeliveryStreamType: DirectPut
+        S3DestinationConfiguration:
+          BucketARN:
+            Fn::GetAtt: [S3BucketStore, Arn]
+          BufferingHints: 
+            IntervalInSeconds: 300
+            SizeInMBs: 5
+          CompressionFormat: UNCOMPRESSED
+          EncryptionConfiguration:
+            NoEncryptionConfig: NoEncryption
+          CloudWatchLoggingOptions: 
+            Enabled: true
+            LogGroupName: "/aws/kinesisfirehose/http-logs-aggregated"
+            LogStreamName: "S3Delivery"
+          Prefix: ${self:custom.s3storebucketprefixaggregated}
+          RoleARN: 
+            Fn::GetAtt: [DeliveryStreamAggregatedRole, Arn]
+    # Role for aggregated firehose delivery stream
+    DeliveryStreamAggregatedRole: 
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: "${self:service}-DeliveryStreamAggregatedRole-${opt:stage, self:provider.stage}"
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Principal:
+                  Service:
+                    - firehose.amazonaws.com
+                Action:
+                  - sts:AssumeRole
+        Policies:
+          -
+            PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "s3:ListBucketMultipartUploads"
+                    - "kinesis:GetShardIterator"
+                    - "s3:ListBucket"
+                    - "kinesis:DescribeStream"
+                    - "logs:PutLogEvents"
+                    - "s3:PutObject"
+                    - "s3:GetObject"
+                    - "s3:AbortMultipartUpload"
+                    - "kinesis:GetRecords"
+                    - "s3:GetBucketLocation"
+                  Resource:
+                    - "arn:aws:s3:::${self:custom.s3storebucketname}"
+                    - "arn:aws:s3:::${self:custom.s3storebucketname}/*"
+                    - "arn:aws:kinesis:${opt:region, self:provider.region}:*:stream/${self:custom.firehosestreamaggregatedname}"
+                    #"arn:aws:logs:::log-group:/aws/kinesisfirehose/http-logs-firehose:log-stream:*"
+
+    KinesisAnalyticsApp:
+      Type: AWS::KinesisAnalytics::Application
+      Properties:
+        ApplicationName: ${self:custom.kinesis_analytics_application_name}
+        ApplicationDescription: "Analyze incoming http logs from Firehose"
+        ApplicationCode: |
+          CREATE STREAM "DESTINATION_LAMBDA"
+          ( eventTimeStamp TIMESTAMP, namespace VARCHAR(256), metricName VARCHAR(256), host VARCHAR(1024), 
+            responseCode INTEGER, urlPatternId VARCHAR(256), unit VARCHAR(256), unitValue BIGINT);
+          /* By request code family and URL pattern ID - 2XX */
+          CREATE OR REPLACE PUMP "DESTINATION_LAMBDA_PER_HOST_2XX" AS 
+          INSERT INTO "DESTINATION_LAMBDA"
+            SELECT eventTimeStamp, '${self:service}-${opt:stage, self:provider.stage}/totals', 'Response_2XX', host, 200, urlPatternId, 'Count', responseCount FROM (
+              SELECT STREAM STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE) eventTimeStamp,
+              logstream.HOST as host, logstream.URLPATTERNID as urlPatternId, COUNT(*) as responseCount
+              FROM "SOURCE_SQL_STREAM_001" logstream 
+              WHERE logstream.STATUS >= 200 AND logstream.STATUS < 300
+              GROUP BY STEP(logstream.ROWTIME BY INTERVAL '5' MINUTE), 
+                STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE), logstream.HOST, logstream.URLPATTERNID
+            );
+          /* By request code family and URL pattern ID - 3XX */
+          CREATE OR REPLACE PUMP "DESTINATION_LAMBDA_PER_HOST_3XX" AS 
+          INSERT INTO "DESTINATION_LAMBDA"
+            SELECT eventTimeStamp, '${self:service}-${opt:stage, self:provider.stage}/totals', 'Response_3XX', host, 300, urlPatternId, 'Count', responseCount FROM (
+              SELECT STREAM STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE) eventTimeStamp, 
+              logstream.HOST as host, logstream.URLPATTERNID as urlPatternId, COUNT(*) as responseCount 
+              FROM "SOURCE_SQL_STREAM_001" logstream 
+              WHERE logstream.STATUS >= 300 AND logstream.STATUS < 400
+              GROUP BY STEP(logstream.ROWTIME BY INTERVAL '5' MINUTE), 
+                STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE), logstream.HOST, logstream.URLPATTERNID
+            );
+          /* By request code family and URL pattern ID - 4XX */
+          CREATE OR REPLACE PUMP "DESTINATION_LAMBDA_PER_HOST_4XX" AS 
+          INSERT INTO "DESTINATION_LAMBDA"
+            SELECT eventTimeStamp, '${self:service}-${opt:stage, self:provider.stage}/totals', 'Response_4XX', host, 400, urlPatternId, 'Count', responseCount FROM (
+              SELECT STREAM STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE) eventTimeStamp,
+              logstream.HOST as host, logstream.URLPATTERNID as urlPatternId, COUNT(*) as responseCount 
+              FROM "SOURCE_SQL_STREAM_001" logstream
+              WHERE logstream.STATUS >= 400 AND logstream.STATUS < 500
+              GROUP BY STEP(logstream.ROWTIME BY INTERVAL '5' MINUTE), 
+                STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE), logstream.HOST, logstream.URLPATTERNID
+            );
+          /* By request code family and URL pattern ID - 404 only */
+          CREATE OR REPLACE PUMP "DESTINATION_LAMBDA_PER_HOST_404" AS 
+          INSERT INTO "DESTINATION_LAMBDA"
+            SELECT eventTimeStamp, '${self:service}-${opt:stage, self:provider.stage}/totals', 'Response_404', host, 404, urlPatternId, 'Count', responseCount FROM (
+              SELECT STREAM STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE) eventTimeStamp,
+              logstream.HOST as host, logstream.URLPATTERNID as urlPatternId, COUNT(*) as responseCount 
+              FROM "SOURCE_SQL_STREAM_001" logstream
+              WHERE logstream.STATUS = 404
+              GROUP BY STEP(logstream.ROWTIME BY INTERVAL '5' MINUTE),
+                STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE), logstream.HOST, logstream.URLPATTERNID
+            );
+          /* By request code family and URL pattern ID - 5XX */
+          CREATE OR REPLACE PUMP "DESTINATION_LAMBDA_PER_HOST_5XX" AS 
+          INSERT INTO "DESTINATION_LAMBDA"
+            SELECT eventTimeStamp, '${self:service}-${opt:stage, self:provider.stage}/totals', 'Response_5XX', host, 500, urlPatternId, 'Count', responseCount FROM (
+              SELECT STREAM STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE) eventTimeStamp, 
+              logstream.HOST as host, logstream.URLPATTERNID as urlPatternId, COUNT(*) as responseCount 
+              FROM "SOURCE_SQL_STREAM_001" logstream
+              WHERE logstream.STATUS >= 500
+              GROUP BY STEP(logstream.ROWTIME BY INTERVAL '5' MINUTE), 
+              STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '5' MINUTE), logstream.HOST, logstream.URLPATTERNID
+            );
+          /* Total counts per response code */
+          CREATE OR REPLACE PUMP "DESTINATION_LAMBDA_PER_HOST" AS 
+          INSERT INTO "DESTINATION_LAMBDA"
+            SELECT eventTimeStamp, '${self:service}-${opt:stage, self:provider.stage}/totals', 'ResponseCountTotal', host, responseCode, '', 'Count', responseCount FROM (
+              SELECT STREAM STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '1' MINUTE) eventTimeStamp, 
+              logstream.STATUS responseCode, logstream.HOST as host, COUNT(*) as responseCount
+              FROM "SOURCE_SQL_STREAM_001" logstream
+              GROUP BY logstream.STATUS, STEP(logstream.ROWTIME BY INTERVAL '1' MINUTE), 
+                STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '1' MINUTE), logstream.HOST
+            );
+          /* ========== Output data to S3 in addition to CloudWatch ================= */
+          CREATE STREAM "DESTINATION_SQL_STREAM"
+          ( eventTimeStamp TIMESTAMP, namespace VARCHAR(256), metricName VARCHAR(256), host VARCHAR(1024), 
+            responseCode INTEGER, urlPatternId VARCHAR(256), unit VARCHAR(256), unitValue BIGINT);
+          /* The separate metrics collected for URLPatternIds in CloudWatch are not needed here - the stream below gives all detail needed */
+          /* Total counts per response code */
+          CREATE OR REPLACE PUMP "DESTINATION_SQL_STREAM_PER_HOST" AS 
+          INSERT INTO "DESTINATION_SQL_STREAM"
+            SELECT eventTimeStamp, '${self:service}-${opt:stage, self:provider.stage}/totals', 'ResponseCountTotal', host, responseCode, urlPatternId, 'Count', responseCount FROM (
+              SELECT STREAM STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '1' MINUTE) eventTimeStamp,
+              logstream.STATUS responseCode, logstream.HOST as host, logstream.URLPATTERNID as urlPatternId, COUNT(*) as responseCount 
+              FROM "SOURCE_SQL_STREAM_001" logstream 
+              GROUP BY logstream.STATUS, STEP(logstream.ROWTIME BY INTERVAL '1' MINUTE), 
+                STEP((cast(logstream.LOGDATE AS TIMESTAMP) + (logstream.LOGTIME - time '0:00:00') minute) BY INTERVAL '1' MINUTE), logstream.HOST, logstream.URLPATTERNID
+            );
+
+        Inputs:
+          - NamePrefix: SOURCE_SQL_STREAM
+            InputSchema:
+              RecordFormat:
+                RecordFormatType: CSV
+                MappingParameters:
+                  CSVMappingParameters: 
+                    RecordRowDelimiter: "\n"
+                    RecordColumnDelimiter: "\t"
+              RecordEncoding: "UTF-8"
+              RecordColumns: 
+                - Name: "LOGDATE"
+                  SqlType: "DATE"
+                - Name: "LOGTIME"
+                  Mapping: "$"
+                  SqlType: "TIME"
+                - Name: "IP"
+                  SqlType: "VARCHAR(40)"
+                - Name: "HTTP_METHOD"
+                  SqlType: "VARCHAR(10)"
+                - Name: "URL"
+                  SqlType: "VARCHAR(1024)"
+                - Name: "STATUS"
+                  SqlType: "INT"
+                - Name: "BYTES"
+                  SqlType: "INT"
+                - Name: "TIME_TAKEN"
+                  SqlType: "INT"
+                - Name: "REFERER"
+                  SqlType: "VARCHAR(1024)"
+                - Name: "USER_AGENT"
+                  SqlType: "VARCHAR(1024)"
+                - Name: "COOKIE"
+                  SqlType: "VARCHAR(256)"
+                - Name: "WAFINFO"
+                  SqlType: "VARCHAR(256)"
+                - Name: "HOST"
+                  SqlType: "VARCHAR(256)"
+                - Name: "URLPATTERNID"
+                  SqlType: "VARCHAR(256)"
+            InputProcessingConfiguration: 
+              InputLambdaProcessor:
+                ResourceARN: 
+                  Fn::GetAtt: [PreprocessorLambdaFunction, Arn] 
+                RoleARN: 
+                  Fn::GetAtt: [KinesisAnalyticsRole, Arn]   
+            KinesisFirehoseInput: 
+              ResourceARN: 
+                Fn::GetAtt: [DeliveryStreamRaw, Arn]  
+              RoleARN: 
+                Fn::GetAtt: [KinesisAnalyticsRole, Arn]
+            InputParallelism:
+              Count: 1
+    
+    KinesisAnalyticsRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: "${self:service}-KinesisAnalyticsRole-${opt:stage, self:provider.stage}"
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            -
+              Effect: Allow
+              Principal:
+                Service:
+                  - kinesisanalytics.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Policies:
+          -
+            PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "firehose:DescribeDeliveryStream"
+                    - "firehose:Get*"
+                  Resource:                       
+                    - 
+                      Fn::GetAtt: [DeliveryStreamRaw, Arn]
+                - Effect: "Allow"
+                  Action:
+                    - "firehose:DescribeDeliveryStream"
+                    - "firehose:PutRecord"
+                    - "firehose:PutRecordBatch"
+                  Resource:                       
+                    - 
+                      Fn::GetAtt: [DeliveryStreamAggregated, Arn]
+                - Effect: "Allow"
+                  Action:
+                    - "lambda:InvokeFunction"
+                    - "lambda:GetFunctionConfiguration"
+                  Resource:                       
+                    - "*"
+                    #- 
+                    #  Fn::GetAtt: [CloudWatchPublishLambdaFunction, Arn]
+                    #- 
+                    #  Fn::GetAtt: [PreprocessorLambdaFunction, Arn]
+          
+    KinesisAnalyticsAppOutputFirehose:
+      Type: AWS::KinesisAnalytics::ApplicationOutput
+      DependsOn: KinesisAnalyticsApp
+      Properties:
+        ApplicationName: ${self:custom.kinesis_analytics_application_name} 
+        Output:
+          Name: "DESTINATION_SQL_STREAM"
+          DestinationSchema:
+            RecordFormatType: "CSV"
+          KinesisFirehoseOutput: 
+            ResourceARN: 
+              Fn::GetAtt: [DeliveryStreamAggregated, Arn] 
+            RoleARN: 
+              Fn::GetAtt: [KinesisAnalyticsRole, Arn] 
+
+    KinesisAnalyticsAppOutputLambda:
+      Type: AWS::KinesisAnalytics::ApplicationOutput
+      DependsOn: KinesisAnalyticsApp
+      Properties:
+        ApplicationName: ${self:custom.kinesis_analytics_application_name} 
+        Output:
+          Name: "DESTINATION_LAMBDA"
+          DestinationSchema:
+            RecordFormatType: "JSON"
+          LambdaOutput: 
+            ResourceARN: 
+              Fn::GetAtt: [CloudWatchPublishLambdaFunction, Arn]  
+            RoleARN: 
+              Fn::GetAtt: [KinesisAnalyticsRole, Arn] 
+
+    RegexDynamoTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.dynamodb_tablename}
+        AttributeDefinitions:
+          -
+            AttributeName: "Id"
+            AttributeType: "S"
+        KeySchema:
+          -
+            AttributeName: "Id"
+            KeyType: "HASH"    
+        ProvisionedThroughput: 
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+              
+    # Role for init function
+    InitRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: "${self:service}-InitRole-${opt:stage, self:provider.stage}"
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Principal:
+                  Service:
+                    - lambda.amazonaws.com
+                Action:
+                  - sts:AssumeRole
+        ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        Policies:
+          -
+            PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - 
+                  Effect: Allow
+                  Action:
+                  - kinesisanalytics:StopApplication
+                  - kinesisanalytics:UpdateApplication
+                  - kinesisanalytics:DescribeApplication
+                  - kinesisanalytics:StartApplication
+                  Resource: "arn:aws:kinesisanalytics:*:*:application/${self:custom.kinesis_analytics_application_name}"
+                - 
+                  Effect: Allow
+                  Action: kinesisanalytics:ListApplications
+                  Resource: "*"
+                - 
+                  Effect: Allow
+                  Action:
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:PutItem
+                  - dynamodb:DescribeTable
+                  - dynamodb:DeleteItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                  Resource: 
+                    Fn::GetAtt: [RegexDynamoTable, Arn] # arn:aws:dynamodb:::table/${self:custom.dynamodb_tablename}
+                - 
+                  Effect: Allow
+                  Action:
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                  - dynamodb:ListTables
+                  Resource: "*"
+  
+    # Role for preprocessor function
+    PreprocessorRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: "${self:service}-Preprocessor-${opt:stage, self:provider.stage}"
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Principal:
+                  Service:
+                    - lambda.amazonaws.com
+                Action:
+                  - sts:AssumeRole
+        ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        Policies:
+          -
+            PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:              
+                - 
+                  Effect: Allow
+                  Action:
+                  - dynamodb:BatchGetItem
+                  - dynamodb:DescribeTable
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  Resource: 
+                    Fn::GetAtt: [RegexDynamoTable, Arn] # arn:aws:dynamodb:::table/${self:custom.dynamodb_tablename}
+               

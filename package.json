@@ -1,0 +1,23 @@
+{
+    "name": "edgesense",
+    "version": "1.0.0",
+    "description": "",
+    "main": "",
+    "dependencies": {
+        "async": "^2.6.0",
+        "csv-parse": "^4.2.0",
+        "js-cache": "^1.0.3",
+        "moment": "^2.22.1"
+    },
+    "devDependencies": {
+        "aws-sdk": "^2.377.0"
+    },
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "deploy": "sls deploy --region eu-west-1",
+        "run:ingest": "sls invoke local --function S3Kinesis --path ingest/data.yml",
+        "run:generate": "sls invoke local --function GenerateTestData"
+    },
+    "author": "",
+    "license": "ISC"
+}
