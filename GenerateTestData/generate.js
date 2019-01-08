@@ -5,9 +5,9 @@ const RandomData = require('./randomData');
 const zlib = require('zlib');
 const aws = require('aws-sdk');
 
-var s3 = new aws.S3({ region: 'eu-west-1'});
+var s3 = new aws.S3();
 
-var bucketName = "edgesense-ingest-dev.eu-west-1.dglecom.net";
+var bucketName;
 
 
 function generateData()
@@ -52,4 +52,18 @@ function sendForever()
     setTimeout(sendForever, 2000);
 }
 
-sendForever();
+if (process.argv.length < 3)
+    console.log("Usage: generate.js BUCKETNAME [REGION]");
+else
+{
+    bucketName = process.argv[2];
+    if (process.argv.length > 3)
+    {
+        var region = process.argv[3];   
+        aws.config.update({
+            region: process.env.REGION
+        });
+    }
+
+    sendForever();
+}
