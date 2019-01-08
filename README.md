@@ -33,9 +33,9 @@ Edgesense uses a number of AWS Services and resources:
 
 By default, edgesense calculates total counts per HTTP status code, and counts per HTTP status code and URL pattern. 
 
-![Total counts](docs/metrics.png)
+![Total counts](docs/Metrics.png)
 
-![Counts per URL pattern](docs/metrics2.png)
+![Counts per URL pattern](docs/Metrics2.png)
 
 ## Deployment
 <a name="deployment"/>
