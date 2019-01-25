@@ -251,8 +251,7 @@ resources:
                     - "kinesis:DescribeStream"
                     - "kinesis:ListStreams"
                   Resource: 
-                    # Fn::GetAtt: [KinesisStreamAggregated, Arn]
-                    "arn:aws:kinesis:${opt:region, self:provider.region}:*:stream/http-logs-aggregated"   # FIXME 
+                    "arn:aws:kinesis:${opt:region, self:provider.region}:*:stream/${self:custom.firehosestreamrawname}" 
     # Role for test data generation function
     GenerateTestDataRole:
       Type: AWS::IAM::Role
@@ -305,7 +304,7 @@ resources:
             NoEncryptionConfig: NoEncryption
           CloudWatchLoggingOptions: 
             Enabled: true
-            LogGroupName: "/aws/kinesisfirehose/http-logs-aggregated"
+            LogGroupName: "/aws/kinesisfirehose/${self:custom.firehosestreamrawname}"
             LogStreamName: "S3Delivery"
           Prefix: ${self:custom.s3storebucketprefixaggregated}
           RoleARN: 
@@ -674,4 +673,551 @@ resources:
                   - dynamodb:Scan
                   Resource: 
                     Fn::GetAtt: [RegexDynamoTable, Arn] # arn:aws:dynamodb:::table/${self:custom.dynamodb_tablename}
-               
+
+    Dashboard:
+      Type: AWS::CloudWatch::Dashboard
+      Properties:
+        DashboardName: "${self:service}-Monitoring-${opt:stage, self:provider.stage}"
+        DashboardBody: |
+          {
+              "widgets": [           
+                  {
+                      "type": "metric",
+                      "x": 12,
+                      "y": 0,
+                      "width": 6,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/Firehose",
+                                  "IncomingRecords",
+                                  "DeliveryStreamName",
+                                  "${self:custom.firehosestreamrawname}"
+                              ],
+                              [
+                                  ".",
+                                  "IncomingBytes",
+                                  ".",
+                                  ".",
+                                  {
+                                      "yAxis": "right"
+                                  }
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Ingestion stream - incoming records",
+                          "period": 300,
+                          "yAxis": {
+                              "left": {
+                                  "min": 0
+                              }
+                          }
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 18,
+                      "y": 0,
+                      "width": 6,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/Firehose",
+                                  "DeliveryToS3.Records",
+                                  "DeliveryStreamName",
+                                  "${self:custom.firehosestreamrawname}"
+                              ],
+                              [
+                                  ".",
+                                  "DeliveryToS3.Success",
+                                  ".",
+                                  "."
+                              ],
+                              [
+                                  ".",
+                                  "DeliveryToS3.Bytes",
+                                  ".",
+                                  ".",
+                                  {
+                                      "yAxis": "right"
+                                  }
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Output strema -records delivered to S3",
+                          "period": 300,
+                          "yAxis": {
+                              "left": {
+                                  "min": 0
+                              }
+                          }
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 6,
+                      "width": 12,
+                      "height": 6,
+                      "properties": {
+                          "metrics": [
+                              [
+                                  "AWS/KinesisAnalytics",
+                                  "Records",
+                                  "Id",
+                                  "2.1",
+                                  "Application",
+                                  "${self:custom.kinesis_analytics_application_name}",
+                                  "Flow",
+                                  "Input",
+                                  {
+                                      "period": 60
+                                  }
+                              ],
+                              [
+                                  "...",
+                                  "13.1",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  "Output",
+                                  {
+                                      "period": 60
+                                  }
+                              ],
+                              [
+                                  "...",
+                                  "8.1",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  {
+                                      "period": 60
+                                  }
+                              ],
+                              [
+                                  ".",
+                                  "LambdaDelivery.OkRecords",
+                                  ".",
+                                  "13.1",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  {
+                                      "period": 60
+                                  }
+                              ],
+                              [
+                                  ".",
+                                  "InputProcessing.OkRecords",
+                                  ".",
+                                  "2.1",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  "Input",
+                                  {
+                                      "period": 60
+                                  }
+                              ]
+                          ],
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Kinesis Analytics Application: Records in and out",
+                          "period": 300,
+                          "yAxis": {
+                              "left": {
+                                  "min": 0
+                              },
+                              "right": {
+                                  "min": 0
+                              }
+                          }
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 12,
+                      "y": 6,
+                      "width": 6,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/KinesisAnalytics",
+                                  "InputProcessing.DroppedRecords",
+                                  "Id",
+                                  "2.1",
+                                  "Application",
+                                  "${self:custom.kinesis_analytics_application_name}",
+                                  "Flow",
+                                  "Input"
+                              ],
+                              [
+                                  ".",
+                                  "InputProcessing.ProcessingFailedRecords",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  "."
+                              ],
+                              [
+                                  ".",
+                                  "LambdaDelivery.DeliveryFailedRecords",
+                                  ".",
+                                  "13.1",
+                                  ".",
+                                  ".",
+                                  ".",
+                                  "Output"
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Kinesis Analytics Application: Errors"
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 12,
+                      "width": 9,
+                      "height": 6,
+                      "properties": {
+                          "metrics": [
+                              [
+                                  "AWS/Lambda",
+                                  "Invocations",
+                                  "FunctionName",
+                                  "${self:service}-${opt:stage, self:provider.stage}-CloudWatchPublish",
+                                  {
+                                      "period": 300
+                                  }
+                              ],
+                              [
+                                  ".",
+                                  "Errors",
+                                  ".",
+                                  ".",
+                                  {
+                                      "period": 300
+                                  }
+                              ],
+                              [
+                                  ".",
+                                  "Duration",
+                                  ".",
+                                  ".",
+                                  {
+                                      "yAxis": "right",
+                                      "period": 300
+                                  }
+                              ]
+                          ],
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Lambda CloudWatch Publishing function: invocations and errors",
+                          "period": 300,
+                          "yAxis": {
+                              "right": {
+                                  "min": 0
+                              }
+                          }
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 9,
+                      "y": 12,
+                      "width": 6,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/Lambda",
+                                  "Invocations",
+                                  "FunctionName",
+                                  "${self:service}-${opt:stage, self:provider.stage}-Preprocessor"
+                              ],
+                              [
+                                  ".",
+                                  "Errors",
+                                  ".",
+                                  "."
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Lambda Preprocessor: invocations and errors"
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 15,
+                      "y": 12,
+                      "width": 9,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/Logs",
+                                  "IncomingLogEvents",
+                                  "LogGroupName",
+                                  "/aws/lambda/${self:service}-${opt:stage, self:provider.stage}-CloudWatchPublish",
+                                  {
+                                      "yAxis": "left"
+                                  }
+                              ],
+                              [
+                                  "...",
+                                  "/aws/lambda/${self:service}-${opt:stage, self:provider.stage}-Preprocessor"
+                              ],
+                              [
+                                  "...",
+                                  "/aws/lambda/${self:service}-${opt:stage, self:provider.stage}-S3Kinesis"
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Incoming log events from Lambda functions",
+                          "period": 300,
+                          "yAxis": {
+                              "left": {
+                                  "min": 0
+                              }
+                          }
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 18,
+                      "width": 6,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/Firehose",
+                                  "IncomingRecords",
+                                  "DeliveryStreamName",
+                                  "${self:custom.firehosestreamrawname}"
+                              ],
+                              [
+                                  ".",
+                                  "IncomingBytes",
+                                  ".",
+                                  ".",
+                                  {
+                                      "yAxis": "right"
+                                  }
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Output stream",
+                          "period": 300,
+                          "yAxis": {
+                              "left": {
+                                  "min": 0
+                              },
+                              "right": {
+                                  "min": 0
+                              }
+                          }
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 6,
+                      "y": 18,
+                      "width": 6,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/Firehose",
+                                  "DeliveryToS3.Success",
+                                  "DeliveryStreamName",
+                                  "${self:custom.firehosestreamrawname}"
+                              ],
+                              [
+                                  ".",
+                                  "DeliveryToS3.Records",
+                                  ".",
+                                  "."
+                              ],
+                              [
+                                  ".",
+                                  "DeliveryToS3.Bytes",
+                                  ".",
+                                  ".",
+                                  {
+                                      "yAxis": "right"
+                                  }
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Output stream - delivery to S3",
+                          "period": 300,
+                          "yAxis": {
+                              "left": {
+                                  "min": 0
+                              },
+                              "right": {
+                                  "min": 0
+                              }
+                          }
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 12,
+                      "y": 18,
+                      "width": 6,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/S3",
+                                  "NumberOfObjects",
+                                  "StorageType",
+                                  "AllStorageTypes",
+                                  "BucketName",
+                                  "http-logs.${opt:region, self:provider.region}.aws.dglecom.net",
+                                  {
+                                      "period": 3600
+                                  }
+                              ],
+                              [
+                                  ".",
+                                  "BucketSizeBytes",
+                                  ".",
+                                  "StandardStorage",
+                                  ".",
+                                  ".",
+                                  {
+                                      "period": 3600,
+                                      "yAxis": "right"
+                                  }
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "period": 300,
+                          "yAxis": {
+                              "left": {
+                                  "min": 0
+                              },
+                              "right": {
+                                  "min": 0
+                              }
+                          },
+                          "title": "Ingestion bucket - S3 object count and data size"
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 3,
+                      "y": 0,
+                      "width": 9,
+                      "height": 6,
+                      "properties": {
+                          "metrics": [
+                              [
+                                  "AWS/Lambda",
+                                  "Invocations",
+                                  "FunctionName",
+                                  "${self:service}-${opt:stage, self:provider.stage}-S3Kinesis",
+                                  {
+                                      "stat": "Sum",
+                                      "period": 60
+                                  }
+                              ],
+                              [
+                                  ".",
+                                  "Throttles",
+                                  ".",
+                                  ".",
+                                  {
+                                      "stat": "Sum",
+                                      "period": 60
+                                  }
+                              ],
+                              [
+                                  ".",
+                                  "Duration",
+                                  ".",
+                                  ".",
+                                  {
+                                      "yAxis": "right",
+                                      "period": 60
+                                  }
+                              ],
+                              [
+                                  ".",
+                                  "Errors",
+                                  ".",
+                                  ".",
+                                  {
+                                      "stat": "Sum",
+                                      "period": 60
+                                  }
+                              ]
+                          ],
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "DataStream S3 Reader function",
+                          "period": 300,
+                          "yAxis": {
+                              "right": {
+                                  "min": 0
+                              }
+                          }
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 18,
+                      "y": 6,
+                      "width": 6,
+                      "height": 6,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "metrics": [
+                              [
+                                  "AWS/KinesisAnalytics",
+                                  "KPUs",
+                                  "Application",
+                                  "${self:custom.kinesis_analytics_application_name}"
+                              ]
+                          ],
+                          "region": "${opt:region, self:provider.region}",
+                          "title": "Kinesis Analytics: KPUs"
+                      }
+                  }
+              ]
+          }
+
+
+ 
