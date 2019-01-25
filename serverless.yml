@@ -683,9 +683,9 @@ resources:
               "widgets": [           
                   {
                       "type": "metric",
-                      "x": 12,
+                      "x": 9,
                       "y": 0,
-                      "width": 6,
+                      "width": 9,
                       "height": 6,
                       "properties": {
                           "view": "timeSeries",
@@ -750,7 +750,7 @@ resources:
                               ]
                           ],
                           "region": "${opt:region, self:provider.region}",
-                          "title": "Output strema -records delivered to S3",
+                          "title": "Output stream -records delivered to S3",
                           "period": 300,
                           "yAxis": {
                               "left": {
@@ -771,7 +771,7 @@ resources:
                                   "AWS/KinesisAnalytics",
                                   "Records",
                                   "Id",
-                                  "2.1",
+                                  "1.1",
                                   "Application",
                                   "${self:custom.kinesis_analytics_application_name}",
                                   "Flow",
@@ -782,7 +782,7 @@ resources:
                               ],
                               [
                                   "...",
-                                  "13.1",
+                                  "2.1",
                                   ".",
                                   ".",
                                   ".",
@@ -793,7 +793,7 @@ resources:
                               ],
                               [
                                   "...",
-                                  "8.1",
+                                  "2.1",
                                   ".",
                                   ".",
                                   ".",
@@ -806,7 +806,7 @@ resources:
                                   ".",
                                   "LambdaDelivery.OkRecords",
                                   ".",
-                                  "13.1",
+                                  "2.1",
                                   ".",
                                   ".",
                                   ".",
@@ -819,7 +819,7 @@ resources:
                                   ".",
                                   "InputProcessing.OkRecords",
                                   ".",
-                                  "2.1",
+                                  "1.1",
                                   ".",
                                   ".",
                                   ".",
@@ -858,7 +858,7 @@ resources:
                                   "AWS/KinesisAnalytics",
                                   "InputProcessing.DroppedRecords",
                                   "Id",
-                                  "2.1",
+                                  "1.1",
                                   "Application",
                                   "${self:custom.kinesis_analytics_application_name}",
                                   "Flow",
@@ -878,7 +878,7 @@ resources:
                                   ".",
                                   "LambdaDelivery.DeliveryFailedRecords",
                                   ".",
-                                  "13.1",
+                                  "2.1",
                                   ".",
                                   ".",
                                   ".",
@@ -1136,9 +1136,9 @@ resources:
                   },
                   {
                       "type": "metric",
-                      "x": 3,
+                      "x": 0,
                       "y": 0,
-                      "width": 9,
+                      "width": 12,
                       "height": 6,
                       "properties": {
                           "metrics": [
