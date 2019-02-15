@@ -88,6 +88,14 @@ resources:
                     - 
                       Name: "prefix"
                       Value: ""
+        LifecycleConfiguration:
+          Rules: 
+            - 
+              ExpirationInDays: 1
+              Id: "Expire logs after 1 day in the ingestion bucket"
+              Status: "Enabled"
+              AbortIncompleteMultipartUpload: 
+                DaysAfterInitiation: 1
     S3BucketIngestPermissionLambda: 
       Type: AWS::Lambda::Permission
       Properties:
