@@ -45,7 +45,7 @@ class Mapper {
                     data.Items.forEach((record) => { 
                         try
                         {
-                            self.mappingRules.push( { "id": record.Id.S, regex: new RegExp(record.Regex.S) });
+                            self.mappingRules.push( { "id": record.Id.S, regex: new RegExp(record.Regex.S), rank: record.Rank.N });
                         }
                         catch(err)
                         {
@@ -53,6 +53,8 @@ class Mapper {
                         }
                         
                     });
+                    self.mappingRules.sort((a, b) => { return a.rank - b.rank; });
+                    console.log(JSON.stringify(self.mappingRules));
                     self.cache.data = self.mappingRules;
                     self.cache.expiration = new Date().getTime() + 10 * 60 * 1000; // 10 minutes TTL                
                     callback(null, self.mappingRules);
