@@ -44,6 +44,9 @@ const parser = parse(csvParams, function(err, data) {
                 "Regex": {
                   "S": item.Regex
                 },
+                "Rank": {
+                  "N": item.Rank
+                }
               }
             }
           });

@@ -13,11 +13,11 @@ var kinesisanalytics_name = process.env.KINESIS_ANALYTICS_NAME;
 var dynamodb_table_name = process.env.DYNAMODB_TABLE_NAME;
 
 var sample_regex = [
-    { id: "Productbrand", regex: "(.*)productbrand_(.*).html(.*)" },
-    { id: "Category", regex: "(.*)index_c(.*).html" },
-    { id: "Product", regex: "(.*)_product_(.*)" },
-    { id: "ProductOverview", regex: "^/product-overview/(.*)" },
-    { id: "Api", regex: "/json/(.*)" },    
+    { id: "Productbrand", regex: "(.*)productbrand_(.*).html(.*)", rank: "1" },
+    { id: "Category", regex: "(.*)index_c(.*).html", rank: "2" },
+    { id: "Product", regex: "(.*)_product_(.*)", rank: "3" },
+    { id: "ProductOverview", regex: "^/product-overview/(.*)", rank: "4" },
+    { id: "Api", regex: "/json/(.*)", rank: "5" },    
 ];
 
 function writeToDynamoDb(entry)
@@ -30,6 +30,9 @@ function writeToDynamoDb(entry)
          "Regex": {
            S: entry.regex
           }, 
+          "Rank": {
+            N: entry.rank
+          }
         }, 
         ReturnConsumedCapacity: "TOTAL", 
         TableName: dynamodb_table_name
