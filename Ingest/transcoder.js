@@ -45,7 +45,7 @@ class Transcoder {
             result = result + this.tsvEscape(record.message.status) + "\t";
             result = result + this.tsvEscape(record.message.bytes) + "\t";
             // Seems that netPerf can be delivered empty
-            if (typeof record.netPerf != 'undefined')
+            if ((typeof record.netPerf != 'undefined') && (typeof record.netPerf.downloadTime != 'undefined'))
                 result = result + this.tsvEscape(record.netPerf.downloadTime) + "\t";
             else
                 result = result + "0\t";

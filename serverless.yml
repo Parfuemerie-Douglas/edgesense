@@ -50,12 +50,12 @@ functions:
   CloudWatchPublish:
     role: CloudWatchRole
     handler: CloudWatchPublish/handler.CloudWatchPublish
-    timeout: 120
+    timeout: 300
 
   Preprocessor:
     handler: Preprocessor/handler.process
     role: PreprocessorRole
-    timeout: 60
+    timeout: 120
     environment:
       REGION: ${opt:region, self:provider.region}
       DYNAMODB_TABLE_NAME: ${self:custom.dynamodb_tablename}
