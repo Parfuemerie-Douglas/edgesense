@@ -36,7 +36,8 @@ class Transcoder {
         try
         {
             // date time cs-ip cs-method cs-uri sc-status sc-bytes time-taken cs(Referer) cs(User-Agent) cs(Cookie) x-wafinfo
-            var requestDate = moment(record.start).utc();
+            // assume "start" time is delivered as Unix Timestamp with fractional seconds (milliseconds)
+            var requestDate = moment(record.start/1000).utc();
             var result =  requestDate.format('YYYY-MM-DD') + "\t";
             result = result + requestDate.format('HH:mm:ss') + "\t";
             result = result + this.tsvEscape(record.message.cliIP) + "\t";
