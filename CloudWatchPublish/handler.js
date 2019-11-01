@@ -112,7 +112,13 @@ module.exports.CloudWatchPublish = (event, context, callback) => {
     {
       var transferBuffer = putMetricBuffer;
       putMetricBuffer = [];
-      sendBufferToCloudWatch(namespace, transferBuffer, callback());
+      sendBufferToCloudWatch(namespace, transferBuffer, (err, data) => {
+        if (err) 
+          console.log(err, err.stack); // an error occurred
+        else     
+          console.log(data);           // successful response
+        callback();
+      });
     }
     else
       callback();
@@ -124,11 +130,11 @@ module.exports.CloudWatchPublish = (event, context, callback) => {
     if( putMetricBuffer.length > 0)
     {
       sendBufferToCloudWatch(namespace, putMetricBuffer, () => {
-        console.log("Send buffer emptied");      
+        //console.log("Send buffer emptied");      
       });
     }
     else 
-      console.log("Send buffer is empty");
+      ; //console.log("Send buffer is empty");
   };
   
   // Write all incoming records to the queue

@@ -49,8 +49,8 @@ class Transcoder {
             if ((typeof record.netPerf != 'undefined') && (typeof record.netPerf.downloadTime != 'undefined'))
                 result = result + this.tsvEscape(record.netPerf.downloadTime) + "\t";
             else
-                result = result + "0\t";
-            if( typeof record.reqHdr.referer != 'undefined') 
+                result = result + "0\t";                
+            if( (typeof record.reqHdr != 'undefined') && (typeof record.reqHdr.referer != 'undefined')) 
                 result = result + "\"" + this.tsvQuotedEscape(this.safeDecodeURIComponent(record.reqHdr.referer)) + "\"\t";
             else
                 result = result + "\"-\"\t";

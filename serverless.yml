@@ -74,6 +74,7 @@ resources:
       Type: AWS::S3::Bucket
       DependsOn:
         - S3BucketIngestPermissionLambda
+      DeletionPolicy: "Retain"
       Properties:
         BucketName: ${self:custom.s3ingestbucketname}
         NotificationConfiguration:
@@ -108,6 +109,7 @@ resources:
     # S3 bucket for storing processed events
     S3BucketStore:
       Type: AWS::S3::Bucket
+      DeletionPolicy: "Retain"
       Properties:
         BucketName: ${self:custom.s3storebucketname}        
     # Stream from S3 reader function to Kinesis Analytics, with raw S3 delivery
