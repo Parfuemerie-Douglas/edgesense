@@ -22,7 +22,8 @@ CREATE EXTERNAL TABLE `edgesense.raw`(
   `user_agent` string, 
   `cookie` string, 
   `wafinfo` string, 
-  `host` string)
+  `host` string,
+  `cache` int)
 PARTITIONED BY ( 
   `month` string)
 ROW FORMAT DELIMITED 

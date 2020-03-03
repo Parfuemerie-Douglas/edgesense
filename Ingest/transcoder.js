@@ -63,7 +63,12 @@ class Transcoder {
             // Wafinfo
             result = result + "\"-\"\t"; 
             // Host
-            result = result + this.tsvEscape(record.message.reqHost) + "\n";  
+            result = result + this.tsvEscape(record.message.reqHost) + "\t";  
+            // Cache hit
+            if((typeof record.cache != 'undefined') && (typeof record.cache.cacheHit != 'undefined'))
+                result = result + this.tsvEscape(record.cache.cacheHit) + "\n";
+            else
+                result = result + "0\n";
             return result; 
         }
         catch(err)

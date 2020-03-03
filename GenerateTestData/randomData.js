@@ -93,7 +93,10 @@ class RandomData {
             "reqHdr": {
                 "referer":"https://" + domain + this.URL()
             },
-            "respHdr":{}
+            "respHdr":{},
+            "cache":{
+                "cacheHit": this.randomNumber(1),
+            },
         }
 
 

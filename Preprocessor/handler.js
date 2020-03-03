@@ -83,8 +83,8 @@ class Mapper {
     mapLogLine(stringData)
     {
         //console.log("Input: '" + stringData + "'");
-        // 1 Logdate 2 Logtime 3 client_ip 4 method 5 path 6 status 7 bytes 8 time_taken 9 referer 10 user_agent 11 cookie 12 wafinfo 13 host
-        const matches = stringData.match(/([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)/);
+        // 1 Logdate 2 Logtime 3 client_ip 4 method 5 path 6 status 7 bytes 8 time_taken 9 referer 10 user_agent 11 cookie 12 wafinfo 13 host 14 cache
+        const matches = stringData.match(/([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)/);
         if (!matches || matches.length < 10)
         {
             console.log("Invalid input format: URI Encoded string - " + encodeURI(stringData));
