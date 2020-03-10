@@ -8,6 +8,11 @@ AWS.config.update({
 
 var dynamodb = new AWS.DynamoDB();
 
+// Allow content of Regexp objects to be logged as JSON 
+Object.defineProperty(RegExp.prototype, "toJSON", {
+    value: RegExp.prototype.toString
+});
+
 class Mapper {
     constructor() {
         this.mappingRules = [];
