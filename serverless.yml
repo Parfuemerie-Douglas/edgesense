@@ -486,6 +486,8 @@ resources:
                   SqlType: "VARCHAR(256)"
                 - Name: "HOST"
                   SqlType: "VARCHAR(256)"
+                - Name: "CACHE"
+                  SqlType: "INT"
                 - Name: "URLPATTERNID"
                   SqlType: "VARCHAR(256)"
             InputProcessingConfiguration: 

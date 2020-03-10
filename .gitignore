@@ -10,3 +10,7 @@ jspm_packages
 
 # Scripts
 **/*.bat
+
+# Other
+*.pem
+*.prod.yml
