@@ -4,7 +4,7 @@
     "description": "",
     "main": "",
     "dependencies": {
-        "async": "^2.6.0",
+        "async": "^2.6.4",
         "chai": "^4.2.0",
         "csv-parse": "^4.4.6",
         "js-cache": "^1.0.3",
