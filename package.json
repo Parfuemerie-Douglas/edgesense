@@ -13,7 +13,7 @@
     "devDependencies": {
         "aws-sdk": "^2.377.0",
         "mocha": "^5.2.0",
-        "moment": "^2.22.1"
+        "moment": "^2.29.4"
     },
     "scripts": {
         "test": "./node_modules/.bin/mocha --reporter spec",
